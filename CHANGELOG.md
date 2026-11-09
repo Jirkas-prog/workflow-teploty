@@ -2,6 +2,8 @@
 
 ## 0.1.0 — Initial preview
 
+- Product name: **CoolTakt** — temperature-based performance control.
+
 - Native Rust application for Windows x64 with English/Czech and light/dark interfaces.
 - Editable CPU and battery temperature curves controlling CPU performance states.
 - Prominent **When to regulate** section; closed-lid-only regulation and thermal sleep enabled by default.

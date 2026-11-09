@@ -850,12 +850,16 @@ impl eframe::App for App {
             .show(ctx, |ui| {
                 ui.add_space(6.);
                 ui.label(
-                    RichText::new("WorkFlow")
+                    RichText::new("CoolTakt")
                         .size(24.)
                         .strong()
                         .color(colors.green),
                 );
-                ui.label(RichText::new("Teploty").size(16.).color(colors.muted));
+                ui.label(
+                    RichText::new(crate::tr!("Výkon podle teploty", "Thermal control"))
+                        .size(12.)
+                        .color(colors.muted),
+                );
                 ui.add_space(20.);
                 for (index, title) in pages.iter().enumerate() {
                     if ui
@@ -1422,7 +1426,13 @@ fn history_chart(ui: &mut egui::Ui, state: &State, height: f32, visible: [bool; 
             .unwrap_or_default();
         painter.text(
             Pos2::new(to_pos(time, 0.).x, chart.bottom() + 15.),
-            egui::Align2::CENTER_CENTER,
+            if tick == 0 {
+                egui::Align2::LEFT_CENTER
+            } else if tick == 4 {
+                egui::Align2::RIGHT_CENTER
+            } else {
+                egui::Align2::CENTER_CENTER
+            },
             label,
             FontId::proportional(11.),
             colors.muted,

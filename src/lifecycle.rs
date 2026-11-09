@@ -56,11 +56,7 @@ pub struct Tray {
 impl Tray {
     pub fn new(ctx: &egui::Context, window: isize) -> Result<Self> {
         let menu = Menu::new();
-        let show = MenuItem::new(
-            crate::tr!("Otevřít WorkFlow Teploty", "Open WorkFlow Teploty"),
-            true,
-            None,
-        );
+        let show = MenuItem::new(crate::tr!("Otevřít CoolTakt", "Open CoolTakt"), true, None);
         let pause = MenuItem::new(
             crate::tr!(
                 "Zastavit regulaci a obnovit výkon",
@@ -78,8 +74,8 @@ impl Tray {
         let icon = crate::ui::icon();
         let tray = TrayIconBuilder::new()
             .with_tooltip(crate::tr!(
-                "WorkFlow Teploty · otevřít kliknutím",
-                "WorkFlow Teploty · click to open"
+                "CoolTakt · otevřít kliknutím",
+                "CoolTakt · click to open"
             ))
             .with_menu(Box::new(menu))
             .with_menu_on_left_click(false)
@@ -136,10 +132,8 @@ impl Tray {
         })
     }
     pub fn refresh_language(&self) {
-        self.show.set_text(crate::tr!(
-            "Otevřít WorkFlow Teploty",
-            "Open WorkFlow Teploty"
-        ));
+        self.show
+            .set_text(crate::tr!("Otevřít CoolTakt", "Open CoolTakt"));
         self.pause.set_text(crate::tr!(
             "Zastavit regulaci a obnovit výkon",
             "Stop regulation and restore performance"
@@ -147,8 +141,8 @@ impl Tray {
         self.quit
             .set_text(crate::tr!("Ukončit aplikaci", "Quit application"));
         let _ = self._icon.set_tooltip(Some(crate::tr!(
-            "WorkFlow Teploty · otevřít kliknutím",
-            "WorkFlow Teploty · click to open"
+            "CoolTakt · otevřít kliknutím",
+            "CoolTakt · click to open"
         )));
     }
 }

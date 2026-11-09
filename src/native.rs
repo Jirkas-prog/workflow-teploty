@@ -369,8 +369,8 @@ pub fn single_instance() -> Result<Instance> {
     let h = OwnedHandle(h);
     if already {
         crate::tbail!(
-            "WorkFlow Teploty už běží. Otevři jeho existující okno.",
-            "WorkFlow Teploty is already running. Open its existing window."
+            "CoolTakt už běží. Otevři jeho existující okno.",
+            "CoolTakt is already running. Open its existing window."
         );
     }
     // Permit the same user's non-elevated launcher to signal an elevated instance.
@@ -431,7 +431,7 @@ pub fn show_error(text: &str) {
         MessageBoxW(
             null_mut(),
             wide(text).as_ptr(),
-            wide("WorkFlow Teploty").as_ptr(),
+            wide("CoolTakt").as_ptr(),
             0x10,
         );
     }

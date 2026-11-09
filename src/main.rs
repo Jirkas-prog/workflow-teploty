@@ -105,7 +105,7 @@ fn run() -> anyhow::Result<()> {
         ..Default::default()
     };
     eframe::run_native(
-        "WorkFlow Teploty",
+        "CoolTakt",
         options,
         Box::new(move |cc| {
             Ok(Box::new(ui::App::new(

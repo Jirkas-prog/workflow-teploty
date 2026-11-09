@@ -1,6 +1,8 @@
-# WorkFlow Teploty
+# CoolTakt
 
 **Temperature-based CPU performance control for Windows laptops, written in Rust.**
+
+CoolTakt is the product name. The repository, executable build target and existing data paths retain their original identifiers for compatibility.
 
 Define separate CPU and battery temperature curves, keep regulation limited to a closed lid, and optionally let the computer sleep to cool down. The application starts in monitoring mode; enabling regulation is a separate action.
 

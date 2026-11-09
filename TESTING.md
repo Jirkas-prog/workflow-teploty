@@ -17,6 +17,19 @@ The 14 tests cover curve interpolation and validation, missing sensors, stricter
 
 Tests do not change the active power plan, register startup, request elevation, lock the session or put the computer to sleep.
 
+## Desktop checks
+
+The Windows desktop preview was checked with synthetic data at a 1200 × 740 client size:
+
+- Overview with the enabled closed-lid condition visible below the live-value cards.
+- Side-by-side CPU and battery curves, collapsed point tables and independent sleep controls.
+- Time-based plots with extrema and threshold-crossing markers.
+- Settings navigation, immediate English/Czech switching and light/dark appearance.
+- Preferences written with the selected language and theme.
+- Launching a second process returned exit code 0 and revealed the existing process instead of starting another controller.
+
+Desktop checks use `--demo`; they do not validate physical power control or sleep.
+
 ## Read-only hardware observations
 
 - Native Windows lid notifications returned a lid state.
