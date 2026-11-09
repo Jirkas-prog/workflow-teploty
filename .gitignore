@@ -1,0 +1,13 @@
+/target/
+/dist/
+*.log
+/tests/
+/qa/
+*.pdb
+*.exe
+*.zip
+.env
+power-recovery.json
+nastaveni.json
+aplikace.json
+profily.json
