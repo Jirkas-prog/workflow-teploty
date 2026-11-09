@@ -13,9 +13,11 @@ cargo test --release --all-targets --features release-tools --locked
 cargo build --release --locked
 ```
 
-The 20 tests cover curve interpolation and validation, missing sensors, stricter-rule selection, lid and AC gating, old-settings migration, independent CPU/battery sleep, optional wake precedence, delayed performance recovery, named-profile validation and persistence, language codes and persisted preferences, and application validation errors in both English and Czech. Update coverage includes signed-manifest tampering, wrong asset origins, downgrade rejection, bounded responses, corrupt/truncated payloads, and refusal to install with an outstanding power-recovery journal.
+The 21 tests cover curve interpolation and validation, missing sensors, stricter-rule selection, lid and AC gating, old-settings migration, independent CPU/battery sleep, optional wake precedence, delayed performance recovery, named-profile validation and persistence, language codes and persisted preferences, and application validation errors in both English and Czech. Update coverage includes signed-manifest tampering, wrong asset origins, downgrade rejection, bounded responses, corrupt/truncated payloads, and refusal to install with an outstanding power-recovery journal.
 
 Windows subprocess tests copy the test executable into isolated temporary directories and exercise the real replacement protocol. They verify successful installation, restoration and restart of the original executable after failed startup, preservation of three user-data files, and consumption of the pending update. The subprocess entry point is also a no-op test in the normal suite. These tests use a synthetic test-only key, not the production signing key.
+
+A read-only Windows WMI query also verifies that sensor-instance discovery preserves the system property used to invoke temperature methods, without requiring a vendor sensor or administrator rights.
 
 Tests do not change the active power plan, register startup, request elevation, lock the session or put the computer to sleep.
 

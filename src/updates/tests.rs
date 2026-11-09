@@ -189,7 +189,16 @@ fn refuses_installation_with_unrestored_power_settings() {
     fs::create_dir(&directory).unwrap();
     fs::write(directory.join("power-recovery.json"), b"journal").unwrap();
     let before = hash_file(&std::env::current_exe().unwrap()).unwrap();
-    assert!(installer::prepare(&directory, signed("0.2.1", &[0; 2048]), false, false).is_err());
+    let mut next_version = Version::parse(CURRENT_VERSION).unwrap();
+    next_version.patch += 1;
+    let error = installer::prepare(
+        &directory,
+        signed(&next_version.to_string(), &[0; 2048]),
+        false,
+        false,
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("napájecí") || error.to_string().contains("power"));
     assert_eq!(
         before,
         hash_file(&std::env::current_exe().unwrap()).unwrap()

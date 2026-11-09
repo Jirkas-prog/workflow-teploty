@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.1 — Lenovo temperature sensor fix
+
+- Fix CPU/GPU temperature discovery: explicitly deserialize the WMI instance's `__PATH`, which generic WMI maps omit. Previously, temperature readings could remain unavailable even when running as administrator.
+- Preserve method errors and report missing or invalid measurement results instead of silently discarding them.
+- Add a real read-only Windows WMI regression test for system-property lookup. Update the power-recovery installer test to remain meaningful across version bumps.
+
 ## 0.2.0 — Signed GitHub updates
 
 - Optional automatic update checks after launch and every six hours, with verified background downloads and installation at the next launch.

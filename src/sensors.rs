@@ -1,6 +1,23 @@
 use crate::{model::Sample, native};
+use anyhow::Result;
+use serde::Deserialize;
 use std::collections::HashMap;
 use wmi::{Variant, WMIConnection};
+
+#[derive(Deserialize)]
+struct WmiInstance {
+    // WMI maps exclude system properties. Request __PATH explicitly by name.
+    #[serde(rename = "__PATH")]
+    path: String,
+}
+
+fn instance_path(connection: &WMIConnection, class: &str) -> wmi::WMIResult<Option<String>> {
+    let rows: Vec<WmiInstance> = connection.raw_query(format!("SELECT __PATH FROM {class}"))?;
+    Ok(rows
+        .into_iter()
+        .map(|row| row.path)
+        .find(|path| !path.is_empty()))
+}
 
 fn number(v: &Variant) -> Option<f32> {
     match v {
@@ -56,17 +73,15 @@ impl Sensors {
                 None
             }
         };
-        let lenovo_path = wmi.as_ref().and_then(|w| {
-            let result =
-                w.raw_query::<HashMap<String, Variant>>("SELECT __PATH FROM LENOVO_GAMEZONE_DATA");
-            match result {
-                Ok(rows) => rows.first().and_then(|r| r.get("__PATH")).and_then(string),
-                Err(e) => {
-                    cpu_error = e.to_string();
-                    None
-                }
-            }
-        });
+        let lenovo_path =
+            wmi.as_ref()
+                .and_then(|w| match instance_path(w, "LENOVO_GAMEZONE_DATA") {
+                    Ok(path) => path,
+                    Err(e) => {
+                        cpu_error = e.to_string();
+                        None
+                    }
+                });
         let mut fallback = None;
         let mut fallback_name = String::new();
         if lenovo_path.is_none() {
@@ -100,19 +115,34 @@ impl Sensors {
             .as_ref()
             .map_or(crate::model::LidState::Unknown, native::LidMonitor::state)
     }
-    fn lenovo(&self, method: &str) -> Option<f32> {
-        let result = self
-            .wmi
-            .as_ref()?
-            .exec_method(self.lenovo_path.as_ref()?, method, None)
-            .ok()??;
+    fn lenovo(&self, method: &str) -> Result<Option<f32>> {
+        let (Some(wmi), Some(path)) = (&self.wmi, &self.lenovo_path) else {
+            return Ok(None);
+        };
+        let result = wmi.exec_method(path, method, None)?.ok_or_else(|| {
+            crate::terr!(
+                "Čidlo nevrátilo výsledek měření.",
+                "The sensor returned no measurement result."
+            )
+        })?;
         if matches!(
             result.get_property("ReturnValue").ok(),
             Some(Variant::Bool(false))
         ) {
-            return None;
+            crate::tbail!(
+                "Čidlo ohlásilo neúspěšné měření.",
+                "The sensor reported a failed measurement."
+            );
         }
-        number(&result.get_property("Data").ok()?)
+        let value = number(&result.get_property("Data")?)
+            .and_then(|value| valid(Some(value), 10., 115.))
+            .ok_or_else(|| {
+                crate::terr!(
+                    "Čidlo nevrátilo platnou teplotu.",
+                    "The sensor did not return a valid temperature."
+                )
+            })?;
+        Ok(Some(value))
     }
     pub fn read(&mut self) -> Sample {
         let (on_ac, battery_percent) = native::battery_status();
@@ -124,8 +154,14 @@ impl Sensors {
             lid_source: self.lid_source.clone(),
             ..Default::default()
         };
-        sample.cpu_temperature = valid(self.lenovo("GetCPUTemp"), 10., 115.);
-        sample.gpu_temperature = valid(self.lenovo("GetGPUTemp"), 10., 115.);
+        sample.cpu_temperature = match self.lenovo("GetCPUTemp") {
+            Ok(value) => value,
+            Err(error) => {
+                self.cpu_error = error.to_string();
+                None
+            }
+        };
+        sample.gpu_temperature = self.lenovo("GetGPUTemp").ok().flatten();
         if sample.cpu_temperature.is_some() {
             sample.cpu_source =
                 crate::tr!("Lenovo · čidlo procesoru", "Lenovo · CPU sensor").into();
@@ -154,8 +190,8 @@ impl Sensors {
             sample.cpu_source = self.fallback_name.clone();
         } else {
             sample.cpu_source = crate::tf!(
-                "Čidlo CPU není dostupné. Zkus Spustit jako správce. {}",
-                "CPU sensor unavailable. Try Run as administrator. {}",
+                "Teplotu CPU nelze přečíst. Čidlo Lenovo vyžaduje oprávnění správce. {}",
+                "Cannot read CPU temperature. The Lenovo sensor requires administrator privileges. {}",
                 self.cpu_error
             );
         }
@@ -224,5 +260,27 @@ impl Sensors {
             self.previous_times = Some((idle, total));
         }
         sample
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn wmi_instance_lookup_preserves_system_path() {
+        // Read-only Windows WMI query, without a vendor sensor or admin rights.
+        // The previous HashMap lookup returned None for this system property.
+        let connection = WMIConnection::new().unwrap();
+        let path = instance_path(&connection, "Win32_OperatingSystem")
+            .unwrap()
+            .unwrap();
+        let object = connection.get_object(&path).unwrap();
+        assert!(
+            object
+                .class()
+                .unwrap()
+                .eq_ignore_ascii_case("Win32_OperatingSystem")
+        );
     }
 }
