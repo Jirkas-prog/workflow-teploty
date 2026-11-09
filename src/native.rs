@@ -560,14 +560,7 @@ fn write_value(scheme: &Guid, sub: &Guid, setting: &Guid, value: u32, ac: bool) 
 }
 
 pub fn write_json(path: &Path, value: &impl Serialize) -> Result<()> {
-    use std::io::Write;
-    let temporary = path.with_extension("tmp");
-    let mut file = std::fs::File::create(&temporary)?;
-    file.write_all(&serde_json::to_vec_pretty(value)?)?;
-    file.sync_all()?;
-    drop(file);
-    std::fs::rename(&temporary, path)?;
-    Ok(())
+    workflow_teploty::persist::write_json(path, value)
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

@@ -27,6 +27,7 @@ pub struct Preferences {
     pub dark: bool,
     pub start_control: bool,
     pub language: crate::i18n::Language,
+    pub auto_updates: bool,
 }
 impl Preferences {
     pub fn load(directory: &Path) -> Self {
@@ -274,16 +275,19 @@ mod tests {
             serde_json::from_str(r#"{"dark":true,"start_control":false}"#).unwrap();
         assert_eq!(legacy.language, Language::Cs);
         assert!(legacy.dark);
+        assert!(!legacy.auto_updates);
         for language in [Language::En, Language::Cs] {
             let preferences = Preferences {
                 language,
                 dark: true,
                 start_control: false,
+                auto_updates: true,
             };
             preferences.save(&dir).unwrap();
             let loaded = Preferences::load(&dir);
             assert_eq!(loaded.language, language);
             assert!(loaded.dark);
+            assert!(loaded.auto_updates);
             i18n::set(loaded.language);
             let message = requested_limit(&Settings::default(), &Sample::default()).unwrap_err();
             assert!(message.contains(if language == Language::En {

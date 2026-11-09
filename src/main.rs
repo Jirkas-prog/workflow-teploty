@@ -3,6 +3,7 @@ mod lifecycle;
 mod native;
 mod sensors;
 mod ui;
+mod updater_ui;
 mod worker;
 use std::{path::PathBuf, time::Duration};
 use workflow_teploty::{i18n, model};
@@ -10,6 +11,12 @@ pub use workflow_teploty::{tbail, terr, tf, tr};
 
 fn run() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().collect();
+    if let Some(index) = args.iter().position(|a| a == "--apply-update") {
+        let path = args
+            .get(index + 1)
+            .ok_or_else(|| anyhow::anyhow!("Missing update plan"))?;
+        return workflow_teploty::updates::installer::apply(std::path::Path::new(path));
+    }
     if let Some(index) = args.iter().position(|a| a == "--diagnostics") {
         let path = args.get(index + 1).ok_or_else(|| {
             crate::terr!(
@@ -83,6 +90,58 @@ fn run() -> anyhow::Result<()> {
     } else {
         model::Settings::default()
     };
+    let startup = updater_ui::StartupUpdate {
+        rules_valid: notice.is_empty(),
+        resume_control: if args.iter().any(|a| a == "--resume-control-after-update") {
+            Some(true)
+        } else if args.iter().any(|a| a == "--pause-control-after-update") {
+            Some(false)
+        } else {
+            None
+        },
+        health_plan: args
+            .iter()
+            .position(|a| a == "--update-health")
+            .and_then(|i| args.get(i + 1))
+            .map(PathBuf::from),
+    };
+    if startup.health_plan.is_none() {
+        workflow_teploty::updates::installer::cleanup(&directory);
+        if !demo
+            && lifecycle::Preferences::load(&directory).auto_updates
+            && !args.iter().any(|a| a == "--skip-update-once")
+            && !directory.join("power-recovery.json").exists()
+        {
+            let update = (|| -> anyhow::Result<bool> {
+                let Some(signed) = workflow_teploty::updates::pending(&directory)? else {
+                    return Ok(false);
+                };
+                if workflow_teploty::updates::last_result(&directory)
+                    .is_some_and(|r| !r.success && r.version == signed.manifest.version)
+                {
+                    return Ok(false);
+                }
+                let resume = startup.rules_valid
+                    && startup
+                        .resume_control
+                        .unwrap_or(lifecycle::Preferences::load(&directory).start_control);
+                workflow_teploty::updates::installer::prepare(
+                    &directory, signed, resume, background,
+                )?;
+                Ok(true)
+            })();
+            match update {
+                Ok(true) => return Ok(()),
+                Ok(false) => {}
+                Err(error) => {
+                    notice = crate::tf!(
+                        "Automatická aktualizace se neprovedla: {error:#}",
+                        "Automatic update was not applied: {error:#}"
+                    )
+                }
+            }
+        }
+    }
     let options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()
             .with_inner_size([1200., 740.])
@@ -109,7 +168,7 @@ fn run() -> anyhow::Result<()> {
         options,
         Box::new(move |cc| {
             Ok(Box::new(ui::App::new(
-                cc, settings, directory, demo, background, notice, instance,
+                cc, settings, directory, demo, background, notice, instance, startup,
             )))
         }),
     )
@@ -117,6 +176,9 @@ fn run() -> anyhow::Result<()> {
 }
 fn main() {
     if let Err(e) = run() {
+        if std::env::args().any(|a| a == "--apply-update") {
+            std::process::exit(1);
+        }
         native::show_error(&format!("{e:#}"));
     }
 }

@@ -22,8 +22,8 @@ jobs:
       - name: Format
         run: cargo fmt --check
       - name: Lint
-        run: cargo clippy --all-targets --locked -- -D warnings
+        run: cargo clippy --all-targets --features release-tools --locked -- -D warnings
       - name: Test without system actions
-        run: cargo test --release --all-targets --locked
+        run: cargo test --release --all-targets --features release-tools --locked
       - name: Build Windows x64
         run: cargo build --release --locked

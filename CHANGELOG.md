@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.0 — Signed GitHub updates
+
+- Optional automatic update checks after launch and every six hours, with verified background downloads and installation at the next launch.
+- Manual **Check for updates** and **Update and restart** controls in Settings, with English/Czech status and errors.
+- Ed25519 release manifests, bounded HTTPS downloads, exact asset hashes, downgrade rejection and repeated verification before installation.
+- Native Rust update helper waits for power restoration and process exit, preserves the previous regulation state, and restores/restarts the old executable if startup fails.
+- Version display follows the package version; user settings and named profiles remain in place.
+- Subprocess integration tests exercise actual Windows executable replacement and rollback without changing power settings.
+
 ## 0.1.0 — Initial preview
 
 - Product name: **CoolTakt** — temperature-based performance control.

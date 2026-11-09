@@ -32,6 +32,7 @@ pub struct State {
     pub history: VecDeque<HistoryPoint>,
     pub events: VecDeque<String>,
     pub needs_recovery: bool,
+    pub stop_epoch: u64,
 }
 impl Default for State {
     fn default() -> Self {
@@ -46,6 +47,7 @@ impl Default for State {
             history: VecDeque::new(),
             events: VecDeque::new(),
             needs_recovery: false,
+            stop_epoch: 0,
         }
     }
 }
@@ -144,6 +146,7 @@ fn stop(
     state.limit = 100.;
     state.countdown = None;
     state.needs_recovery = directory.join("power-recovery.json").exists();
+    state.stop_epoch = state.stop_epoch.wrapping_add(1);
 }
 fn run(
     mut settings: Settings,

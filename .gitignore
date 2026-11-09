@@ -11,3 +11,6 @@ power-recovery.json
 nastaveni.json
 aplikace.json
 profily.json
+*.key
+*.pem
+/updates/

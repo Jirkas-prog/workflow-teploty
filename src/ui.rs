@@ -2,11 +2,15 @@ use crate::{
     lifecycle::{self, Preferences, Tray, TrayAction},
     model::{Curve, NamedProfile, Point, Settings},
     native,
+    updater_ui::{StartupUpdate, UpdateManager},
     worker::{Command, State, Worker},
 };
 use eframe::egui::{self, Color32, FontId, Pos2, Rect, RichText, Sense, Stroke, Vec2};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-use std::{path::PathBuf, time::Duration};
+use std::{
+    path::PathBuf,
+    time::{Duration, Instant},
+};
 
 #[derive(Clone, Copy)]
 struct Palette {
@@ -157,6 +161,11 @@ pub struct App {
     profile_name: String,
     profiles_readable: bool,
     history_series: [bool; 3],
+    updates: UpdateManager,
+    updating: Option<(u64, bool, Instant)>,
+    health_plan: Option<PathBuf>,
+    health_first_frame: bool,
+    resume_after_health: bool,
 }
 impl App {
     #[allow(clippy::too_many_arguments)]
@@ -168,15 +177,18 @@ impl App {
         background: bool,
         mut notice: String,
         instance: native::Instance,
+        startup: StartupUpdate,
     ) -> Self {
         let preferences = Preferences::load(&directory);
         crate::i18n::set(preferences.language);
         install_style(&cc.egui_ctx, preferences.dark);
+        let start_control =
+            startup.rules_valid && startup.resume_control.unwrap_or(preferences.start_control);
         let worker = Worker::new(
             settings.clone(),
             directory.clone(),
             demo,
-            preferences.start_control && notice.is_empty(),
+            start_control && startup.health_plan.is_none(),
         );
         let window = cc
             .window_handle()
@@ -220,6 +232,11 @@ impl App {
             Vec::new()
         });
         Self {
+            updates: UpdateManager::new(directory.clone()),
+            updating: None,
+            resume_after_health: start_control && startup.health_plan.is_some(),
+            health_plan: startup.health_plan,
+            health_first_frame: false,
             settings,
             worker,
             directory,
@@ -242,6 +259,81 @@ impl App {
             profile_name: String::new(),
             profiles_readable,
             history_series: [true, true, false],
+        }
+    }
+    fn poll_updates(&mut self, ctx: &egui::Context, state: &State) {
+        if self.health_plan.is_some() {
+            if self.health_first_frame {
+                let path = self.health_plan.take().unwrap();
+                if let Err(e) =
+                    workflow_teploty::updates::installer::acknowledge(&path, &self.directory)
+                {
+                    self.resume_after_health = false;
+                    self.notice = crate::tf!(
+                        "Start aktualizace nelze potvrdit: {e:#}",
+                        "Cannot confirm update startup: {e:#}"
+                    );
+                }
+            } else {
+                self.health_first_frame = true;
+            }
+        }
+        if self.health_plan.is_none()
+            && self.resume_after_health
+            && state
+                .sampled_at
+                .is_some_and(|t| t.elapsed() < Duration::from_secs(10))
+        {
+            self.resume_after_health = false;
+            self.worker.send(Command::Enable);
+        }
+        self.updates.poll(
+            self.preferences.auto_updates && self.updating.is_none(),
+            self.demo,
+            ctx,
+        );
+        if let Some((epoch, resume, started)) = self.updating {
+            if let Some(result) = self
+                .updates
+                .install
+                .as_ref()
+                .and_then(|rx| rx.try_recv().ok())
+            {
+                self.updates.install = None;
+                self.updating = None;
+                match result {
+                    Ok(_) => {
+                        self.quitting = true;
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    }
+                    Err(error) => {
+                        self.updates.error = error;
+                        if resume && !state.needs_recovery {
+                            self.worker.send(Command::Enable);
+                        }
+                    }
+                }
+            } else if self.updates.install.is_none() && state.stop_epoch >= epoch && !state.enabled
+            {
+                if state.needs_recovery {
+                    self.updating = None;
+                    self.updates.error = crate::tr!(
+                        "Nejdřív obnov původní napájecí nastavení.",
+                        "Restore the original power settings first."
+                    )
+                    .into();
+                } else {
+                    self.updates.prepare(resume, ctx);
+                }
+            } else if self.updates.install.is_none() && started.elapsed() > Duration::from_secs(60)
+            {
+                self.updating = None;
+                self.updates.error = crate::tr!(
+                    "Regulace se nezastavila včas. Aktualizace byla zrušena.",
+                    "Regulation did not stop in time. The update was cancelled."
+                )
+                .into();
+            }
         }
     }
     fn save_preferences(&mut self) {
@@ -739,6 +831,82 @@ impl App {
             ui.label(RichText::new(crate::tr!("Spánek pozastaví výpočty i přenosy. Po probuzení práce pokračuje, přenos může potřebovat obnovit spojení.", "Sleep pauses computations and transfers. Work resumes after wake; a transfer may need to reconnect.")).size(12.).color(colors.muted));
         });
         ui.add_space(4.);
+        card(ui, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                ui.strong(crate::tr!("Aktualizace z GitHubu", "GitHub updates"));
+                ui.label(format!("v{}", workflow_teploty::updates::CURRENT_VERSION));
+            });
+            if ui
+                .add_enabled(
+                    !self.demo,
+                    egui::Checkbox::new(
+                        &mut self.preferences.auto_updates,
+                        crate::tr!(
+                            "Automaticky stahovat a instalovat aktualizace",
+                            "Automatically download and install updates"
+                        ),
+                    ),
+                )
+                .changed()
+            {
+                self.save_preferences();
+                if self.preferences.auto_updates {
+                    self.updates.check(false, ctx);
+                }
+            }
+            ui.label(RichText::new(crate::tr!("Kontrola po spuštění a každých 6 hodin. Instalace při příštím spuštění zachová nastavení a profily.", "Checked after launch and every 6 hours. Installation at the next launch preserves settings and profiles.")).size(12.).color(colors.muted));
+            ui.horizontal_wrapped(|ui| {
+                if ui.add_enabled(!self.demo && !self.updates.busy(), egui::Button::new(crate::tr!("Zkontrolovat aktualizace", "Check for updates"))).clicked() { self.updates.check(true, ctx); }
+                let can_install = !self.demo && !self.updates.busy() && self.updates.pending.is_some()
+                    && self.settings == state.applied_settings && !state.needs_recovery && state.countdown.is_none()
+                    && (!state.enabled || (state.sampled_at.is_some_and(|t| t.elapsed() < Duration::from_secs(10))
+                        && crate::model::requested_limit(&self.settings, &state.sample).is_ok()
+                        && crate::model::sleep_request(&self.settings, &state.sample).is_none()));
+                if ui.add_enabled(can_install, egui::Button::new(crate::tr!("Aktualizovat a restartovat", "Update and restart")))
+                    .on_hover_text(crate::tr!("Nejdřív ulož změny. Regulace se krátce zastaví a pak se obnoví její předchozí stav.", "Save changes first. Regulation briefly stops, then its previous state is restored.")).clicked() {
+                    self.updating = Some((state.stop_epoch + 1, state.enabled, Instant::now()));
+                    self.worker.send(Command::Disable);
+                }
+            });
+            let status = if self.updating.is_some() {
+                crate::tr!(
+                    "Připravuji bezpečný restart aplikace…",
+                    "Preparing a safe application restart…"
+                )
+                .into()
+            } else {
+                self.updates.status()
+            };
+            ui.label(
+                RichText::new(status)
+                    .size(12.)
+                    .color(if self.updates.error.is_empty() {
+                        colors.muted
+                    } else {
+                        colors.red
+                    }),
+            );
+            if let Some(result) = workflow_teploty::updates::last_result(&self.directory) {
+                if result.success {
+                    ui.small(crate::tf!(
+                        "Poslední aktualizace: {} — dokončena.",
+                        "Last update: {} — completed.",
+                        result.version
+                    ));
+                } else {
+                    ui.colored_label(
+                        colors.gold,
+                        crate::tf!(
+                            "Instalace {} se nezdařila: {}",
+                            "Installation of {} failed: {}",
+                            result.version,
+                            result.detail
+                        ),
+                    );
+                }
+            }
+        });
+        ui.add_space(4.);
         ui.horizontal_wrapped(|ui| {
             if ui
                 .button(crate::tr!("Spustit jako správce", "Run as administrator"))
@@ -819,7 +987,11 @@ impl eframe::App for App {
         for action in tray_events {
             match action {
                 TrayAction::Show => lifecycle::show_window(ctx, self.window),
-                TrayAction::Pause => self.worker.send(Command::Disable),
+                TrayAction::Pause => {
+                    if self.updating.is_none() {
+                        self.worker.send(Command::Disable);
+                    }
+                }
                 TrayAction::Quit => {
                     self.quitting = true;
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
@@ -837,6 +1009,7 @@ impl eframe::App for App {
             ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
         }
         let state = self.worker.snapshot();
+        self.poll_updates(ctx, &state);
         let pages = [
             crate::tr!("Přehled", "Overview"),
             crate::tr!("Teploty v čase", "Temperature history"),
@@ -874,9 +1047,12 @@ impl eframe::App for App {
                 }
                 ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
                     ui.label(
-                        RichText::new("v0.1.0 · Rust / Windows")
-                            .size(10.)
-                            .color(colors.muted),
+                        RichText::new(format!(
+                            "v{} · Rust / Windows",
+                            workflow_teploty::updates::CURRENT_VERSION
+                        ))
+                        .size(10.)
+                        .color(colors.muted),
                     );
                     if ui
                         .button(crate::tr!("Ukončit aplikaci", "Quit application"))
@@ -912,6 +1088,9 @@ impl eframe::App for App {
         egui::CentralPanel::default()
             .frame(egui::Frame::new().fill(colors.bg).inner_margin(18))
             .show(ctx, |ui| {
+                if self.updating.is_some() {
+                    ui.disable();
+                }
                 ui.horizontal(|ui| {
                     ui.heading(RichText::new(pages[self.tab]).size(25.));
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
